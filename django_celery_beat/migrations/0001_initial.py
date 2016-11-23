@@ -107,12 +107,12 @@ class Migration(migrations.Migration):
                 ('crontab', models.ForeignKey(
                     blank=True, help_text='Use one of interval/crontab',
                     null=True, on_delete=django.db.models.deletion.CASCADE,
-                    to='django_celery_beat.CrontabSchedule',
+                    to='beat.CrontabSchedule',
                     verbose_name='crontab')),
                 ('interval', models.ForeignKey(
                     blank=True, null=True,
                     on_delete=django.db.models.deletion.CASCADE,
-                    to='django_celery_beat.IntervalSchedule',
+                    to='beat.IntervalSchedule',
                     verbose_name='interval')),
             ],
             options={
