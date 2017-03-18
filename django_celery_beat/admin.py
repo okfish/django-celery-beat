@@ -5,13 +5,18 @@ from django import forms
 from django.conf import settings
 from django.contrib import admin
 from django.forms.widgets import Select
+from django.template.defaultfilters import pluralize
 from django.utils.translation import ugettext_lazy as _
 
 from celery import current_app
 from celery.utils import cached_property
 from kombu.utils.json import loads
 
-from .models import PeriodicTask, IntervalSchedule, CrontabSchedule
+from .models import (
+    PeriodicTask, PeriodicTasks,
+    IntervalSchedule, CrontabSchedule,
+    SolarSchedule
+)
 from .utils import is_database_scheduler
 
 try:
@@ -111,22 +116,23 @@ class PeriodicTaskAdmin(admin.ModelAdmin):
     form = PeriodicTaskForm
     model = PeriodicTask
     list_display = ('__str__', 'enabled')
+    actions = ('enable_tasks', 'disable_tasks')
     fieldsets = (
         (None, {
             'fields': ('name', 'regtask', 'task', 'enabled'),
             'classes': ('extrapretty', 'wide'),
         }),
         ('Schedule', {
-            'fields': ('interval', 'crontab'),
+            'fields': ('interval', 'crontab', 'solar'),
             'classes': ('extrapretty', 'wide', ),
         }),
         ('Arguments', {
             'fields': ('args', 'kwargs'),
-            'classes': ('extrapretty', 'wide', 'collapse'),
+            'classes': ('extrapretty', 'wide', 'collapse', 'in'),
         }),
         ('Execution Options', {
             'fields': ('expires', 'queue', 'exchange', 'routing_key'),
-            'classes': ('extrapretty', 'wide', 'collapse'),
+            'classes': ('extrapretty', 'wide', 'collapse', 'in'),
         }),
     )
 
@@ -139,9 +145,36 @@ class PeriodicTaskAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         qs = super(PeriodicTaskAdmin, self).get_queryset(request)
-        return qs.select_related('interval', 'crontab')
+        return qs.select_related('interval', 'crontab', 'solar')
+
+    def enable_tasks(self, request, queryset):
+        rows_updated = queryset.update(enabled=True)
+        PeriodicTasks.update_changed()
+        self.message_user(
+            request,
+            _('{0} task{1} {2} successfully enabled').format(
+                rows_updated,
+                pluralize(rows_updated),
+                pluralize(rows_updated, _('was,were')),
+            ),
+        )
+    enable_tasks.short_description = _('Enable selected tasks')
+
+    def disable_tasks(self, request, queryset):
+        rows_updated = queryset.update(enabled=False)
+        PeriodicTasks.update_changed()
+        self.message_user(
+            request,
+            _('{0} task{1} {2} successfully disabled').format(
+                rows_updated,
+                pluralize(rows_updated),
+                pluralize(rows_updated, _('was,were')),
+            ),
+        )
+    disable_tasks.short_description = _('Disable selected tasks')
 
 
 admin.site.register(IntervalSchedule)
 admin.site.register(CrontabSchedule)
+admin.site.register(SolarSchedule)
 admin.site.register(PeriodicTask, PeriodicTaskAdmin)

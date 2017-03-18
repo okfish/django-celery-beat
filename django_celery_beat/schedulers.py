@@ -20,6 +20,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from .models import (
     PeriodicTask, PeriodicTasks,
     CrontabSchedule, IntervalSchedule,
+    SolarSchedule,
 )
 from .utils import make_aware
 
@@ -47,6 +48,7 @@ class ModelEntry(ScheduleEntry):
     model_schedules = (
         (schedules.crontab, CrontabSchedule, 'crontab'),
         (schedules.schedule, IntervalSchedule, 'interval'),
+        (schedules.solar, SolarSchedule, 'solar'),
     )
     save_fields = ['last_run_at', 'total_run_count', 'no_changes']
 
@@ -220,7 +222,7 @@ class DatabaseScheduler(Scheduler):
         return False
 
     def reserve(self, entry):
-        new_entry = Scheduler.reserve(self, entry)
+        new_entry = next(entry)
         # Need to store entry by name, because the entry may change
         # in the mean time.
         self._dirty.add(new_entry.name)
@@ -245,11 +247,16 @@ class DatabaseScheduler(Scheduler):
 
     def update_from_dict(self, mapping):
         s = {}
-        for name, entry in items(mapping):
+        for name, entry_fields in items(mapping):
             try:
-                s[name] = self.Entry.from_entry(name, app=self.app, **entry)
+                entry = self.Entry.from_entry(name,
+                                              app=self.app,
+                                              **entry_fields)
+                if entry.model.enabled:
+                    s[name] = entry
+
             except Exception as exc:
-                logger.error(ADD_ENTRY_ERROR, name, exc, entry)
+                logger.error(ADD_ENTRY_ERROR, name, exc, entry_fields)
         self.schedule.update(s)
 
     def install_default_entries(self, data):
@@ -278,6 +285,8 @@ class DatabaseScheduler(Scheduler):
         if update:
             self.sync()
             self._schedule = self.all_as_schedule()
+            # the schedule changed, invalidate the heap in Scheduler.tick
+            self._heap = None
             if logger.isEnabledFor(logging.DEBUG):
                 debug('Current schedule:\n%s', '\n'.join(
                     repr(entry) for entry in values(self._schedule)),
